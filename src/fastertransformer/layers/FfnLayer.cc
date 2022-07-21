@@ -16,6 +16,8 @@
 
 #include "src/fastertransformer/layers/FfnLayer.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -23,6 +25,7 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
                           const std::vector<fastertransformer::Tensor>* input_tensors,
                           const FfnWeight<T>* ffn_weights)
 {
+    nvtxRangePushA("FFN layer");
     // input tensors:
     //      ffn_input [token_num, hidden_dimension],
 
@@ -137,6 +140,7 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
         freeBuffer();
     }
     sync_check_cuda_error();
+    nvtxRangePop();
 }
 
 template<typename T>

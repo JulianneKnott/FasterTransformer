@@ -23,6 +23,8 @@
 #include "src/fastertransformer/layers/beam_search_layers/BaseBeamSearchLayer.h"
 #include "src/fastertransformer/utils/logger.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -412,6 +414,7 @@ void ParallelGpt<T>::forward(std::vector<Tensor>* output_tensors,
                              const std::vector<Tensor>* input_tensors,
                              const ParallelGptWeight<T>* gpt_weights)
 {
+    // nvtxRangePushA("parallel gpt");
     // input_tensors:
     //      input_ids [batch_size, max_input_length]
     //      input_lengths [batch_size]
@@ -447,6 +450,7 @@ void ParallelGpt<T>::forward(std::vector<Tensor>* output_tensors,
         output_tensors_map.insert({"cum_log_probs", output_tensors->at(4)});
     }
     forward(&output_tensors_map, &input_tensors_map, gpt_weights);
+    // nvtxRangePop();
 }
 
 template<typename T>
@@ -454,6 +458,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                              const std::unordered_map<std::string, Tensor>* input_tensors,
                              const ParallelGptWeight<T>* gpt_weights)
 {
+    // nvtxRangePushA("parallel gpt");
     // input_tensors:
     //      input_ids [batch_size, max_input_length]
     //      input_lengths [batch_size]
@@ -571,6 +576,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
 
     // handle first step
     if (input_tensors->count("prefix_soft_prompt_embedding") || max_input_length >= 1) {
+        nvtxRangePushA("first step");
         invokeTileGptInputs(tiled_input_ids_buf_,
                             tiled_input_lengths_buf_,
                             (int*)input_tensors->at("input_ids").data,
@@ -666,6 +672,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                                       gpt_weights);
         }
         sync_check_cuda_error();
+        nvtxRangePop();
     }
     else if (max_input_length == 0) {
         max_input_length++;
@@ -713,7 +720,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                         cudaMemcpyDeviceToDevice,
                         stream_);
     }
-
+    nvtxRangePushA("outer loop");
     for (int step = max_input_length; step < (int)max_output_seq_len; step++) {
         const int src_indir_idx = (step - max_input_length) % 2;
         const int tgt_indir_idx = 1 - src_indir_idx;
@@ -721,7 +728,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
         const size_t local_batch_size = getLocalBatchSize(batch_size, 1, pipeline_para_.world_size_);
         FT_CHECK(batch_size % local_batch_size == 0);
         const size_t iteration_num = batch_size / local_batch_size;
-
+        nvtxRangePushA("inner loop");
         for (uint ite = 0; ite < iteration_num; ++ite) {
             const int id_offset = ite * local_batch_size * beam_width;
             const int hidden_units_offset = id_offset * hidden_units_;
@@ -783,7 +790,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                                        hidden_units_,
                                        stream_);
                 sync_check_cuda_error();
-
+                nvtxRangePush("GEMM");
                 if (tensor_para_.world_size_ == 1) {
                     float alpha = 1.0f;
                     float beta = 0.0f;
@@ -845,6 +852,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                                           local_vocab_size,
                                           stream_);
                 }
+                nvtxRangePop();
 
                 int tmp_local_batch_size = local_batch_size;
                 bool is_initialize_random_table = step == max_input_length;
@@ -914,6 +922,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
                 dynamic_decode_layer_->forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
             }
         }
+        nvtxRangePop();
 
         if (pipeline_para_.world_size_ > 1) {
             NCCLCHECK(ncclGroupStart());
@@ -951,6 +960,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
             break;
         }
     }
+    nvtxRangePop();
 
     if (pipeline_para_.rank_ == pipeline_para_.world_size_ - 1) {
         if (input_tensors->at("input_ids").shape[1] == 0) {
@@ -1057,7 +1067,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
             if (output_tensors->count("output_log_probs") > 0
                 && output_tensors->at("output_log_probs").data != nullptr) {
                 ftNcclSend(output_tensors->at("output_log_probs").getPtr<float>(),
-                           output_tensors->at("output_log_probs").size(),
+                           batch_size * beam_width * input_tensors->at("max_output_seq_len").getVal<int>(),
                            0,
                            pipeline_para_,
                            stream_);
@@ -1087,7 +1097,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
             if (output_tensors->count("output_log_probs") > 0
                 && output_tensors->at("output_log_probs").data != nullptr) {
                 ftNcclRecv(output_tensors->at("output_log_probs").getPtr<float>(),
-                           output_tensors->at("output_log_probs").size(),
+                           batch_size * beam_width * input_tensors->at("max_output_seq_len").getVal<int>(),
                            pipeline_para_.world_size_ - 1,
                            pipeline_para_,
                            stream_);
@@ -1096,6 +1106,7 @@ void ParallelGpt<T>::forward(std::unordered_map<std::string, Tensor>* output_ten
         NCCLCHECK(ncclGroupEnd());
         check_cuda_error(cudaStreamSynchronize(stream_));
     }
+    // nvtxRangePop();
 }
 
 template<typename T>

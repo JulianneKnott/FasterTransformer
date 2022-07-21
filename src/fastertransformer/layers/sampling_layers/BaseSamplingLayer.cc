@@ -19,6 +19,8 @@
 #include "src/fastertransformer/kernels/sampling_penalty_kernels.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -60,6 +62,7 @@ BaseSamplingLayer<T>::~BaseSamplingLayer()
 template<typename T>
 void BaseSamplingLayer<T>::forward(std::vector<Tensor>* output_tensors, const std::vector<Tensor>* input_tensors)
 {
+    nvtxRangePushA("base sampling layer");
     // input_tensors:
     //      logits [local_batch_size, vocab_size_padded]
     //      embedding_bias [vocab_size_padded]
@@ -91,12 +94,14 @@ void BaseSamplingLayer<T>::forward(std::vector<Tensor>* output_tensors, const st
                                                                {"sequence_length", output_tensors->at(2)},
                                                                {"cum_log_probs", output_tensors->at(3)}};
     forward(&output_tensors_map, &input_tensors_map);
+    nvtxRangePop();
 }
 
 template<typename T>
 void BaseSamplingLayer<T>::forward(std::unordered_map<std::string, Tensor>* output_tensors,
                                    const std::unordered_map<std::string, Tensor>* input_tensors)
 {
+    nvtxRangePushA("base sampling layer");
     // input_tensors:
     //      logits [local_batch_size, vocab_size_padded]
     //      embedding_bias [vocab_size_padded]
@@ -167,6 +172,7 @@ void BaseSamplingLayer<T>::forward(std::unordered_map<std::string, Tensor>* outp
         freeBuffer();
     }
     sync_check_cuda_error();
+    nvtxRangePop();
 }
 
 template class BaseSamplingLayer<float>;

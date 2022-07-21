@@ -21,6 +21,8 @@
 #include <float.h>
 #include <type_traits>
 
+#include "nvToolsExt.h"
+
 // #define MMHA_USE_HMMA_FOR_REDUCTION
 
 // Below are knobs to extend FP32 accumulation for higher FP16 accuracy
@@ -1274,6 +1276,11 @@ void mmha_launch_kernel(const KERNEL_PARAMS_TYPE& params, const cudaStream_t& st
     constexpr bool DO_CROSS_ATTENTION = std::is_same<KERNEL_PARAMS_TYPE, Cross_multihead_attention_params<T>>::value;
     int tlength = (DO_CROSS_ATTENTION) ? params.seq_length : params.timestep;
     // printf("tlength, CROSS_ATTENTION = %d, %d\n", tlength, DO_CROSS_ATTENTION);
+    if (DO_CROSS_ATTENTION) {
+        nvtxRangePushA("cross attention");
+    } else {
+        nvtxRangePushA("self attention");
+    }
     if (tlength < 32) {
         MMHA_LAUNCH_KERNEL(T, Dh, Dh_MAX, 4, THREADS_PER_VALUE, 64, DO_CROSS_ATTENTION, stream);
     }
@@ -1283,6 +1290,7 @@ void mmha_launch_kernel(const KERNEL_PARAMS_TYPE& params, const cudaStream_t& st
     else {
         MMHA_LAUNCH_KERNEL(T, Dh, Dh_MAX, 1, THREADS_PER_VALUE, 256, DO_CROSS_ATTENTION, stream);
     }
+    nvtxRangePop();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

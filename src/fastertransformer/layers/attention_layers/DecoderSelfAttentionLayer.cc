@@ -18,6 +18,8 @@
 #include "src/fastertransformer/kernels/decoder_masked_multihead_attention.h"
 #include "src/fastertransformer/utils/logger.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -399,6 +401,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                            const std::vector<fastertransformer::Tensor>* input_tensors,
                                            const AttentionWeight<T>* attention_weights)
 {
+    nvtxRangePushA("decoder self attention layer");
     // input tensors:
     //      attention_input [batch_size, d_model_],
     //      finished [batch_size],
@@ -413,7 +416,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
     //      attention_output [batch_size, d_model_],
     //      key_cache [batch, local_head_num, size_per_head // x, max_seq_len, x]
     //      value_cache [batch, local_head_num, max_seq_len, size_per_head]
-
+    nvtxRangePushA("decoder self attn setup");
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     FT_CHECK(input_tensors->size() == 7 || input_tensors->size() == 8);
     FT_CHECK(output_tensors->size() == 3);
@@ -437,7 +440,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
     const int batch_size = input_tensors->at(0).shape[0];
     const int beam_width = input_tensors->at(6).shape[1];
     const int max_seq_len = output_tensors->at(1).shape[3];
-
+    nvtxRangePop();
 #ifdef SPARSITY_ENABLED
     const int m_padded = 8 * div_up(batch_size, 8);
     if (sparse_ && cublas_wrapper_->isUseSparse(1, 3 * local_hidden_units_, m_padded, d_model_)) {
@@ -455,6 +458,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
         if (int8_mode_ != 0 && batch_size <= 2) {
             FT_CHECK(attention_weights->query_weight.int8_kernel != NULL
                      && attention_weights->query_weight.scale != NULL);
+            nvtxRangePushA("int8 multiply 1");
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->query_weight.int8_kernel,
                                                           attention_input,
                                                           attention_weights->query_weight.scale,
@@ -463,12 +467,14 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                                           3 * local_hidden_units_,
                                                           d_model_,
                                                           stream_);
+            nvtxRangePop();
         }
         else {
             if (int8_mode_ == 1) {
                 FT_LOG_WARNING(
                     "[DecoderSelfAttentionLayer<T>::forward] int8 gpt doesn't support m > 2, run fp gpt instead.\n");
             }
+            nvtxRangePushA("GEMM 1");
             cublas_wrapper_->Gemm(CUBLAS_OP_N,
                                   CUBLAS_OP_N,
                                   3 * local_hidden_units_,  // n
@@ -480,11 +486,13 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                   d_model_,  // k
                                   qkv_buf_,
                                   3 * local_hidden_units_ /* n */);
+            nvtxRangePop();
         }
 #ifdef SPARSITY_ENABLED
     }
 #endif
     sync_check_cuda_error();
+    nvtxRangePushA("fused QKV masked attention dispatch");
     fusedQKV_masked_attention_dispatch<T>(qkv_buf_,
                                           attention_weights->query_weight.bias,
                                           relative_attention_bias,
@@ -507,6 +515,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                           q_scaling_,
                                           relative_attention_bias_stride,
                                           stream_);
+    nvtxRangePop();
     sync_check_cuda_error();
 
 #ifdef SPARSITY_ENABLED
@@ -523,6 +532,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
     else {
 #endif
         if (int8_mode_ != 0 && batch_size <= 2) {
+            nvtxRangePushA("int 8 multiply 2");
             FT_CHECK(attention_weights->attention_output_weight.int8_kernel != NULL
                      && attention_weights->attention_output_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->attention_output_weight.int8_kernel,
@@ -533,12 +543,14 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                                           d_model_,
                                                           local_hidden_units_,
                                                           stream_);
+            nvtxRangePop();
         }
         else {
             if (int8_mode_ == 1) {
                 FT_LOG_WARNING(
                     "[DecoderSelfAttentionLayer<T>::forward] int8 gpt doesn't support m > 2, run fp gpt instead.\n");
             }
+            nvtxRangePushA("GEMM 2");
             cublas_wrapper_->Gemm(CUBLAS_OP_N,
                                   CUBLAS_OP_N,
                                   d_model_,  // n
@@ -550,6 +562,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
                                   local_hidden_units_,  // k
                                   attention_out,
                                   d_model_ /* n */);
+            nvtxRangePop();
         }
         sync_check_cuda_error();
 #ifdef SPARSITY_ENABLED
@@ -559,6 +572,7 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
     if (is_free_buffer_after_forward_ == true) {
         freeBuffer();
     }
+    nvtxRangePop();
 }
 
 template class DecoderSelfAttentionLayer<float>;

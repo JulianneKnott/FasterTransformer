@@ -25,6 +25,8 @@
 #include "src/fastertransformer/layers/sampling_layers/TopKTopPSamplingLayer.h"
 #include "src/fastertransformer/layers/sampling_layers/TopPSamplingLayer.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -359,6 +361,7 @@ void Gpt<T>::forward(std::vector<Tensor>* output_tensors,
                      const std::vector<Tensor>* input_tensors,
                      const GptWeight<T>* gpt_weights)
 {
+    nvtxRangePushA("GPT forward");
     // input_tensors:
     //      input_ids [batch_size * beam, max_input_length]
     //      input_lengths [batch_size * beam]
@@ -693,6 +696,7 @@ void Gpt<T>::forward(std::vector<Tensor>* output_tensors,
                                   max_output_seq_len, batch_size * beam_width_, 1, stream_);
         }
     }
+    nvtxRangePop();
 }
 
 template class Gpt<float>;
