@@ -91,7 +91,8 @@ def main():
                              ' 0: do not return the cumulative log probs '
                              ' 1: return the cumulative log probs of generated sequences'
                              ' 2: return the cumulative log probs of sequences')
-
+    parser.add_argument('--iterations', type=int, default=10,
+                        help='iterations for benchmarking.')
     args = parser.parse_args()
 
     layer_num = args.layer_num
@@ -113,6 +114,7 @@ def main():
     max_seq_len = args.max_seq_len
     repetition_penalty = args.repetition_penalty
     return_cum_log_probs = args.return_cum_log_probs
+    iterations = args.iterations
     return_output_length = return_cum_log_probs > 0
 
     print("\n=============== Arguments ===============")
@@ -120,12 +122,9 @@ def main():
         print("{}: {}".format(arg, getattr(args, arg)))
     print("=========================================\n")
 
-    torch.cuda.nvtx.range_push("get encoder")
     enc = encoder.get_encoder(args.vocab_file, args.merges_file)
-    torch.cuda.nvtx.range_pop()
 
     # Inputs
-    torch.cuda.nvtx.range_push("encode input")
     contexts = []
     if args.sample_input_file:  # conditional case
         with open(args.sample_input_file, "r") as f:
@@ -137,7 +136,6 @@ def main():
         batch_size = max_batch_size
         contexts = ['<|endoftext|>'] * batch_size
         start_ids = [torch.IntTensor([end_id])] * batch_size
-    torch.cuda.nvtx.range_pop()
 
     print("[INFO] batch size: {}".format(batch_size))
 
@@ -153,7 +151,6 @@ def main():
         random_seed = random.randint(0, 100000)
 
     # Prepare model.
-    torch.cuda.nvtx.range_push("prepare model")
     gpt = GPT(head_num, size_per_head, vocab_size, start_id, end_id, layer_num,
               max_seq_len, tensor_para_size, pipeline_para_size, lib_path=args.lib_path)
     if not gpt.load(ckpt_path=args.ckpt_path):
@@ -165,11 +162,9 @@ def main():
 
     if args.sparse:
         gpt.sparse()
-    torch.cuda.nvtx.range_pop()
 
     with torch.no_grad():
         # Generate tokens.
-        torch.cuda.nvtx.range_push("generate tokens")
         tokens_batch = gpt(start_ids,
                            start_lengths,
                            output_len,
@@ -183,7 +178,6 @@ def main():
                            random_seed,
                            return_output_length,
                            return_cum_log_probs)
-        torch.cuda.nvtx.range_pop()
 
         if return_cum_log_probs > 0:
             tokens_batch, _, cum_log_probs = tokens_batch
@@ -191,7 +185,6 @@ def main():
         
         # only a thread (rank 0) gets the output, while the others are supposed to return None.
         if tokens_batch is not None:
-            torch.cuda.nvtx.range_push("decode generated tokens")
             outputs = []
             tokens_batch = tokens_batch.cpu().numpy()
             for i, (context, tokens) in enumerate(zip(contexts, tokens_batch)):
@@ -200,19 +193,14 @@ def main():
                     output = enc.decode(token)
                     outputs.append(output)
                     print(f"[INFO] batch {i}, beam {beam_id}: \n[Context]\n{context}\n\n[Output]\n{output}\n")
-            torch.cuda.nvtx.range_pop()
-            torch.cuda.nvtx.range_push("write decoded output to file")
             if args.sample_output_file:
                 with open(args.sample_output_file, "w+") as f:
                     outputs = [o.replace("\n", "\\n") for o in outputs]
                     f.writelines("\n".join(outputs))
-            torch.cuda.nvtx.range_pop()
         # Measure inference time.
         if args.time:
-            torch.cuda.nvtx.range_push("measuring inference time")
-            iterations = 100
             # warmup
-            for i in range(iterations):
+            for i in range(10):
                 tokens_batch = gpt(start_ids,
                                    start_lengths,
                                    output_len,
@@ -231,6 +219,7 @@ def main():
             token_num = 0
             time = timeit.default_timer()
             for i in range(iterations):
+                torch.cuda.nvtx.range_push("generate tokens")
                 tokens_batch = gpt(start_ids,
                                    start_lengths,
                                    output_len,
@@ -244,6 +233,7 @@ def main():
                                    random_seed,
                                    return_output_length,
                                    return_cum_log_probs)
+                torch.cuda.nvtx.range_pop()
                 batch_num += 1
                 for j, tokens in enumerate(tokens_batch):
                     token_num += tokens.shape[-1] - start_lengths[j]
@@ -251,7 +241,7 @@ def main():
             throughput = token_num / time_elapsed
             print(f"[INFO] FT-GPT generates {batch_num} batches, taking {time_elapsed:0.3f} secs "
                   f"to generate {token_num} tokens, {throughput:0.3f} tokens/sec.")
-            torch.cuda.nvtx.range_pop()
+
 
 if __name__ == '__main__':
     main()
