@@ -3,7 +3,9 @@ model="$1"; shift
 input="$1"; shift
 beam="$1"; shift
 output_len="$1"; shift
+vm_path="$1"; shift
 input_len="$1"; shift
+
 
 cd /datadrive/jknott/FasterTransformer/build
 
@@ -23,6 +25,8 @@ python ../examples/pytorch/gpt/gpt_example.py \
 --data_type 'fp16' \
 --sample_input_file $input \
 --iterations 100 \
+--vocab_file $vm_path/gpt2-vocab.json \
+--merges_file $vm_path/gpt2-merges.txt \
 --time > ../$name
 
 nsys profile -o ../$name \
@@ -40,4 +44,6 @@ python ../examples/pytorch/gpt/gpt_example.py \
 --data_type 'fp16' \
 --sample_input_file $input \
 --iterations 1 \
+--vocab_file $vm_path/gpt2-vocab.json \
+--merges_file $vm_path/gpt2-merges.txt \
 --time
