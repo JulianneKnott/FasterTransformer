@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include "src/fastertransformer/models/multi_gpu_gpt/ParallelGpt.h"
+#include "src/fastertransformer/models/gpt/Gpt.h"
 #include "src/fastertransformer/th_op/th_utils.h"
 #include "src/fastertransformer/utils/cuda_bf16_wrapper.h"
 
@@ -87,31 +87,31 @@ public:
         cublas_algo_map_ = new ft::cublasAlgoMap(GEMM_CONFIG, sp_config_fname);
         cublas_wrapper_mutex_ = new std::mutex();
 
-        gpt_weights_.resizeLayer(layer_num_);
+        //gpt_weights_.resizeLayer(layer_num_);
         for (int i = 0; i < (int)layer_num_; i++) {
-            gpt_weights_.decoder_layer_weights[i]->pre_layernorm_weights.gamma =
+            gpt_weights_.decoder_layer_weights[i].pre_layernorm_weights.gamma =
                 get_ptr<T>(weights_[i + 0 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->pre_layernorm_weights.beta =
+            gpt_weights_.decoder_layer_weights[i].pre_layernorm_weights.beta =
                 get_ptr<T>(weights_[i + 1 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.kernel =
+            gpt_weights_.decoder_layer_weights[i].self_attention_weights.query_weight.kernel =
                 get_ptr<T>(weights_[i + 2 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.bias =
+            gpt_weights_.decoder_layer_weights[i].self_attention_weights.query_weight.bias =
                 get_ptr<T>(weights_[i + 3 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
+            gpt_weights_.decoder_layer_weights[i].self_attention_weights.attention_output_weight.kernel =
                 get_ptr<T>(weights_[i + 4 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.bias =
+            gpt_weights_.decoder_layer_weights[i].self_attention_weights.attention_output_weight.bias =
                 get_ptr<T>(weights_[i + 5 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attn_layernorm_weights.gamma =
+            gpt_weights_.decoder_layer_weights[i].self_attn_layernorm_weights.gamma =
                 get_ptr<T>(weights_[i + 6 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->self_attn_layernorm_weights.beta =
+            gpt_weights_.decoder_layer_weights[i].self_attn_layernorm_weights.beta =
                 get_ptr<T>(weights_[i + 7 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
+            gpt_weights_.decoder_layer_weights[i].ffn_weights.intermediate_weight.kernel =
                 get_ptr<T>(weights_[i + 8 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.bias =
+            gpt_weights_.decoder_layer_weights[i].ffn_weights.intermediate_weight.bias =
                 get_ptr<T>(weights_[i + 9 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.kernel =
+            gpt_weights_.decoder_layer_weights[i].ffn_weights.output_weight.kernel =
                 get_ptr<T>(weights_[i + 10 * layer_num_]);
-            gpt_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.bias =
+            gpt_weights_.decoder_layer_weights[i].ffn_weights.output_weight.bias =
                 get_ptr<T>(weights_[i + 11 * layer_num_]);
         }
 
@@ -200,10 +200,10 @@ public:
         const size_t max_input_length = (size_t)input_ids.size(1);
         const int total_output_len = (int)(max_input_length + request_output_len);
 
-        ft::NcclParam tensor_para;
-        ft::NcclParam pipeline_para;
+        // ft::NcclParam tensor_para;
+        // ft::NcclParam pipeline_para;
 
-        ft::ParallelGpt<T> gpt = ft::ParallelGpt<T>(request_batch_size,
+        ft::Gpt<T> gpt = ft::Gpt<T>(request_batch_size,
                                                     total_output_len,
                                                     max_input_length,
                                                     beam_width,
@@ -221,85 +221,114 @@ public:
                                                     temperature,
                                                     len_penalty,
                                                     repetition_penalty,
-                                                    tensor_para,
-                                                    pipeline_para,
                                                     stream,
                                                     &cublas_wrapper,
                                                     &allocator,
                                                     false,
                                                     &prop_,
-                                                    sparse_,
-                                                    0);
+                                                    sparse_);
 
-        std::unordered_map<std::string, ft::Tensor> input_tensors = std::unordered_map<std::string, ft::Tensor>{
-            {"input_ids",
-             ft::Tensor{ft::MEMORY_GPU,
+        // std::unordered_map<std::string, ft::Tensor> input_tensors = std::unordered_map<std::string, ft::Tensor>{
+        //     {"input_ids",
+        //      ft::Tensor{ft::MEMORY_GPU,
+        //                 ft::TYPE_INT32,
+        //                 std::vector<size_t>{request_batch_size, max_input_length},
+        //                 get_ptr<int>(input_ids)}},
+        //     {"input_lengths",
+        //      ft::Tensor{
+        //          ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{request_batch_size}, get_ptr<int>(input_lengths)}},
+        //     {"max_output_seq_len",
+        //      ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &total_output_len}}};
+        
+        // temp for checking 1gpu implementation
+        std::vector<ft::Tensor> input_tensors;
+        input_tensors.push_back(ft::Tensor{ft::MEMORY_GPU,
                         ft::TYPE_INT32,
                         std::vector<size_t>{request_batch_size, max_input_length},
-                        get_ptr<int>(input_ids)}},
-            {"input_lengths",
-             ft::Tensor{
-                 ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{request_batch_size}, get_ptr<int>(input_lengths)}},
-            {"max_output_seq_len",
-             ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &total_output_len}}};
-        if (top_k == 0 && top_p == 0.0f) {
-            ft::FT_CHECK(beam_width > 1);
-            input_tensors.insert(
-                {"beam_search_diversity_rate",
-                 ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &beam_search_diversity_rate}});
-        }
-        else {
-            if (top_p != 0.0f) {
-                input_tensors.insert(
-                    {"runtime_top_p", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &top_p}});
-            }
-            if (top_k != 0) {
-                input_tensors.insert(
-                    {"runtime_top_k", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &top_k}});
-            }
-        }
-        input_tensors.insert(
-            {"temperature", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &temperature}});
-        input_tensors.insert(
-            {"len_penalty", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &len_penalty}});
-        input_tensors.insert({"repetition_penalty",
-                              ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &repetition_penalty}});
-        input_tensors.insert(
-            {"random_seed", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_UINT64, std::vector<size_t>{1}, &random_seed}});
+                        get_ptr<int>(input_ids)});
+        input_tensors.push_back(ft::Tensor{
+                 ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{request_batch_size}, get_ptr<int>(input_lengths)});
+        input_tensors.push_back(ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &total_output_len});
+        //**************************************
+        
+        // if (top_k == 0 && top_p == 0.0f) {
+        //     ft::FT_CHECK(beam_width > 1);
+        //     input_tensors.insert(
+        //         {"beam_search_diversity_rate",
+        //          ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &beam_search_diversity_rate}});
+        // }
+        // else {
+        //     if (top_p != 0.0f) {
+        //         input_tensors.insert(
+        //             {"runtime_top_p", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &top_p}});
+        //     }
+        //     if (top_k != 0) {
+        //         input_tensors.insert(
+        //             {"runtime_top_k", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &top_k}});
+        //     }
+        // }
+        // input_tensors.insert(
+        //     {"temperature", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &temperature}});
+        // input_tensors.insert(
+        //     {"len_penalty", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &len_penalty}});
+        // input_tensors.insert({"repetition_penalty",
+        //                       ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &repetition_penalty}});
+        // input_tensors.insert(
+        //     {"random_seed", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_UINT64, std::vector<size_t>{1}, &random_seed}});
 
-        bool return_context_cum_log_probs = false;
-        if (return_cum_log_probs == 2) {
-            return_context_cum_log_probs = true;
-            input_tensors.insert(
-                {"is_return_context_cum_log_probs",
-                 ft::Tensor{ft::MEMORY_CPU, ft::TYPE_BOOL, std::vector<size_t>{1}, &return_context_cum_log_probs}});
-        }
+        // bool return_context_cum_log_probs = false;
+        // if (return_cum_log_probs == 2) {
+        //     return_context_cum_log_probs = true;
+        //     input_tensors.insert(
+        //         {"is_return_context_cum_log_probs",
+        //          ft::Tensor{ft::MEMORY_CPU, ft::TYPE_BOOL, std::vector<size_t>{1}, &return_context_cum_log_probs}});
+        // }
 
-        std::unordered_map<std::string, ft::Tensor> output_tensors = std::unordered_map<std::string, ft::Tensor>{
-            {"output_ids",
-             ft::Tensor{ft::MEMORY_GPU,
+        // std::unordered_map<std::string, ft::Tensor> output_tensors = std::unordered_map<std::string, ft::Tensor>{
+        //     {"output_ids",
+        //      ft::Tensor{ft::MEMORY_GPU,
+        //                 ft::TYPE_INT32,
+        //                 std::vector<size_t>{request_batch_size, beam_width, (size_t)total_output_len},
+        //                 get_ptr<int>(output_ids)}},
+        //     {"parent_ids",
+        //      ft::Tensor{ft::MEMORY_GPU,
+        //                 ft::TYPE_INT32,
+        //                 std::vector<size_t>{(size_t)total_output_len, request_batch_size, beam_width},
+        //                 get_ptr<int>(parent_ids)}},
+        //     {"sequence_length",
+        //      ft::Tensor{ft::MEMORY_GPU,
+        //                 ft::TYPE_INT32,
+        //                 std::vector<size_t>{request_batch_size, beam_width},
+        //                 get_ptr<int>(sequence_lengths)}}};
+
+        // if (return_cum_log_probs > 0) {
+        //     output_tensors.insert({"cum_log_probs",
+        //                            ft::Tensor{ft::MEMORY_GPU,
+        //                                       ft::TYPE_FP32,
+        //                                       std::vector<size_t>{request_batch_size, beam_width},
+        //                                       get_ptr<float>(cum_log_probs)}});
+        // }
+        // temp for checking 1gpu implementation
+        std::vector<ft::Tensor> output_tensors;
+        output_tensors.push_back(ft::Tensor{ft::MEMORY_GPU,
                         ft::TYPE_INT32,
                         std::vector<size_t>{request_batch_size, beam_width, (size_t)total_output_len},
-                        get_ptr<int>(output_ids)}},
-            {"parent_ids",
-             ft::Tensor{ft::MEMORY_GPU,
+                        get_ptr<int>(output_ids)});
+        output_tensors.push_back(ft::Tensor{ft::MEMORY_GPU,
                         ft::TYPE_INT32,
                         std::vector<size_t>{(size_t)total_output_len, request_batch_size, beam_width},
-                        get_ptr<int>(parent_ids)}},
-            {"sequence_length",
-             ft::Tensor{ft::MEMORY_GPU,
+                        get_ptr<int>(parent_ids)});
+        output_tensors.push_back(ft::Tensor{ft::MEMORY_GPU,
                         ft::TYPE_INT32,
                         std::vector<size_t>{request_batch_size, beam_width},
-                        get_ptr<int>(sequence_lengths)}}};
-
+                        get_ptr<int>(sequence_lengths)});
         if (return_cum_log_probs > 0) {
-            output_tensors.insert({"cum_log_probs",
-                                   ft::Tensor{ft::MEMORY_GPU,
+            output_tensors.push_back(ft::Tensor{ft::MEMORY_GPU,
                                               ft::TYPE_FP32,
                                               std::vector<size_t>{request_batch_size, beam_width},
-                                              get_ptr<float>(cum_log_probs)}});
+                                              get_ptr<float>(cum_log_probs)});
         }
-
+        //**************************************
         try {
             gpt.forward(&output_tensors, &input_tensors, &gpt_weights_);
         }
@@ -332,7 +361,7 @@ private:
     std::mutex* cublas_wrapper_mutex_;
     ft::cublasAlgoMap* cublas_algo_map_;
     struct cudaDeviceProp prop_;
-    ft::ParallelGptWeight<T> gpt_weights_;
+    ft::GptWeight<T> gpt_weights_;
 };
 
 class GptOp: public th::jit::CustomClassHolder {
