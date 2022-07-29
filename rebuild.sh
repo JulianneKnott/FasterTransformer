@@ -1,4 +1,5 @@
 cd /datadrive/jknott/FasterTransformer
+rm -rf build
 mkdir -p build
 cd build
 git submodule init && git submodule update
