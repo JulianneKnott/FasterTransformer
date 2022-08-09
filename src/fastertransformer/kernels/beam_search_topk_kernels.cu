@@ -25,6 +25,8 @@
 #include "src/fastertransformer/kernels/beam_search_topk_kernels.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 template<typename T, int MAX_K, int THREADBLOCK_SIZE>
 __launch_bounds__(THREADBLOCK_SIZE) __global__ void beam_topK_kernel(
@@ -357,6 +359,7 @@ void invokeTopkBeamSearch(void* workspace,
                           const int* end_ids,
                           cudaStream_t stream)
 {
+    nvtxRangePushA("Invoke Top K Beam Search 1");
     const int vocab_size = vocab_size_padded_;
 
     const int max_block_per_beam = 8;
@@ -372,6 +375,7 @@ void invokeTopkBeamSearch(void* workspace,
     if (workspace == nullptr) {
         workspace_size = sizeof(float) * temp_log_probs_buf_size + sizeof(int) * topk_tmp_ids_buf_size
                          + sizeof(float) * topk_tmp_val_buf_size;
+        nvtxRangePop();
         return;
     }
     else {
@@ -405,12 +409,15 @@ void invokeTopkBeamSearch(void* workspace,
                 CASE_K_DIV(64, 256, 64);
                 default:
                     printf("[ERROR] Topk kernel does not support beamwidth = %d \n", beam_width);
+                    nvtxRangePop();
                     exit(0);
                     break;
             }
         }
+        nvtxRangePop();
         return;
     }
+    nvtxRangePop();
 }
 
 #undef CASE_K

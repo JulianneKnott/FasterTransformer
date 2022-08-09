@@ -27,6 +27,8 @@ from utils.translation_model import load_test_model
 from utils.translator import Translator
 import logging
 
+import torch
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", type=int, default=1, help="batch size")
 parser.add_argument("--beam_size", type=int, default=4, help="beam size")
@@ -60,7 +62,7 @@ opt = argparse.Namespace(models=[args.model_path],
                          beam_size=args.beam_size, min_length=0, max_length=args.max_seq_len,
                          stepwise_penalty=False, length_penalty='none', ratio=-0.0, coverage_penalty='none', alpha=0.0, beta=-0.0,
                          block_ngram_repeat=0, ignore_when_blocking=[], replace_unk=False, phrase_table='',
-                         verbose=True, dump_beam='', n_best=1, batch_type='sents', gpu=0)
+                         verbose=True, dump_beam='', n_best=args.beam_size, batch_type='sents', gpu=0)
 
 
 fields, model, model_opt = load_test_model(opt, args)
@@ -85,9 +87,12 @@ n = 1
 with open(args.input_file, 'r') as f:
     lines = f.readlines()
     lines = [line.strip() for line in lines]
+    torch.cuda.nvtx.range_push("translate")
     translated = translator.translate(lines, batch_size=args.batch_size)
+    torch.cuda.nvtx.range_pop()
     for i in range(len(translated[1])):
-        res.append(translated[1][i][0])
+        for j in range(len(translated[1][0])):
+            res.append(translated[1][i][j])
 
 if args.output_file:
     with open(args.output_file, 'w') as f:

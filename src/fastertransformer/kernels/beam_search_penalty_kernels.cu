@@ -16,7 +16,7 @@
 
 #include "src/fastertransformer/kernels/beam_search_penalty_kernels.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
-
+#include "nvToolsExt.h"
 namespace fastertransformer {
 
 template<typename T>
@@ -115,6 +115,7 @@ void invokeAddBiasApplyPenalties(int step,
                                  const float repeat_penalty,
                                  cudaStream_t stream)
 {
+    nvtxRangePushA("Invoke Add Bias Apply Penalty (beam search) 1");
     dim3 block(256);
     dim3 grid((vocab_size_padded + block.x - 1) / block.x, beam_width * local_batch_size);
     add_bias_apply_logit_penalties_kernel<T><<<grid, block, 0, stream>>>(step,
@@ -135,6 +136,7 @@ void invokeAddBiasApplyPenalties(int step,
                                                                          len_penalty,
                                                                          repeat_penalty);
     sync_check_cuda_error();
+    nvtxRangePop();
 }
 
 template void invokeAddBiasApplyPenalties(int step,

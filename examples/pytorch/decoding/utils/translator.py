@@ -333,6 +333,7 @@ class Translator(object):
         start_time = time.time()
 
         for batch in data_iter:
+            torch.cuda.nvtx.range_push("a batch")
             if self.model_type == 'decoding_ext' or self.model_type == 'torch_decoding' or self.model_type == 'torch_decoding_with_decoder_ext':
                 batch_data = self.translate_batch_ftdecoding(batch, data.src_vocabs)
             else:
@@ -404,7 +405,8 @@ class Translator(object):
                         self.logger.info(output)
                     else:
                         os.write(1, output.encode('utf-8'))
-
+            torch.cuda.nvtx.range_pop()
+        
         end_time = time.time()
 
         if self.report_score:
@@ -470,7 +472,9 @@ class Translator(object):
             use_src_map = self.copy_attn
             batch_size = batch.batch_size
 
+            torch.cuda.nvtx.range_push("run encoder")
             src, enc_states, memory_bank, src_lengths = self._run_encoder(batch)
+            torch.cuda.nvtx.range_pop()
 
             results = {
                 "predictions": None,
@@ -483,7 +487,9 @@ class Translator(object):
 
             src_lengths_ = src_lengths.to(torch.int32)
             memory_bank_ = memory_bank.transpose(0, 1).contiguous()
+            torch.cuda.nvtx.range_push("run decoder")
             output, lengths = self.model.decoder(batch_size, self.beam_size, self.max_length, memory_bank_, src_lengths_)
+            torch.cuda.nvtx.range_pop()
 
             results["scores"] = [(0,) for _ in range(batch_size)]
             results["predictions"] = output
@@ -599,16 +605,20 @@ class Translator(object):
                 enc_states, batch_size, src)}
 
         # (2) prep decode_strategy. Possibly repeat src objects.
+        torch.cuda.nvtx.range_push("Prep Beam Search (decode_strategy)")
         src_map = batch.src_map if use_src_map else None
         fn_map_state, memory_bank, memory_lengths, src_map = \
             decode_strategy.initialize(memory_bank, src_lengths, src_map)
         if fn_map_state is not None:
             self.model.decoder.map_state(fn_map_state)
+        torch.cuda.nvtx.range_pop()
 
         # (3) Begin decoding step by step:
+        torch.cuda.nvtx.range_push("Beam Search? decoding step by step")
         for step in range(decode_strategy.max_length):
             decoder_input = decode_strategy.current_predictions.view(1, -1, 1)
 
+            torch.cuda.nvtx.range_push("decode and generate")
             log_probs, attn = self._decode_and_generate(
                 decoder_input,
                 memory_bank,
@@ -618,8 +628,11 @@ class Translator(object):
                 src_map=src_map,
                 step=step,
                 batch_offset=decode_strategy.batch_offset)
+            torch.cuda.nvtx.range_pop()
 
+            torch.cuda.nvtx.range_push("Advance Beam Search")
             decode_strategy.advance(log_probs, attn)
+            torch.cuda.nvtx.range_pop()
             any_finished = decode_strategy.is_finished.any()
             if any_finished:
                 decode_strategy.update_finished()
@@ -645,6 +658,7 @@ class Translator(object):
                 self.model.decoder.map_state(
                     lambda state, dim: state.index_select(dim, select_indices))
 
+        torch.cuda.nvtx.range_pop()
         results["scores"] = decode_strategy.scores
         results["predictions"] = decode_strategy.predictions
         results["attention"] = decode_strategy.attention

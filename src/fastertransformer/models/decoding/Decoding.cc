@@ -22,6 +22,8 @@
 #include "src/fastertransformer/layers/beam_search_layers/BaseBeamSearchLayer.h"
 #include "src/fastertransformer/models/decoding/Decoding.h"
 
+#include "nvToolsExt.h"
+
 namespace fastertransformer {
 
 template<typename T>
@@ -77,8 +79,10 @@ void Decoding<T>::allocateBuffer()
         key_cache_ = (T*)(allocator_->malloc(sizeof(T) * self_cache_size, false));
         value_cache_ = (T*)(allocator_->malloc(sizeof(T) * self_cache_size, false));
         if (beam_width_ > 1) {
+            nvtxRangePushA("Beam Search? set cache_indirections");
             cache_indirections_[0] = (int*)(allocator_->malloc(sizeof(int) * batchxbeam * max_seq_len_ * 2, true));
             cache_indirections_[1] = cache_indirections_[0] + batchxbeam * max_seq_len_;
+            nvtxRangePop();
         }
         key_mem_cache_ = (T*)(allocator_->malloc(sizeof(T) * mem_cache_size, false));
         value_mem_cache_ = (T*)(allocator_->malloc(sizeof(T) * mem_cache_size, false));
@@ -288,7 +292,9 @@ void Decoding<T>::forward(std::vector<Tensor>* output_tensors,
     deviceFill(end_ids_buf_, batch_size, end_id_);
 
     if (beam_width_ > 1) {
+        nvtxRangePushA("Beam Search? memset async cache_indirections");
         cudaMemsetAsync(cache_indirections_[0], 0, 2 * sizeof(int) * batch_size * beam_width_ * max_seq_len_, stream_);
+        nvtxRangePop();
     }
 
     invokeDecodingInitialize(finished_buf_,
@@ -468,6 +474,7 @@ void Decoding<T>::forward(std::vector<Tensor>* output_tensors,
     invokeMinusUnfinishedSeqlen((int*)output_tensors->at(2).data, finished_buf_, batch_size * beam_width_, stream_);
 
     if (beam_width_ > 1) {
+        nvtxRangePushA("Beam Search? - gather tree");
         // For beam search, do gather_tree
         // TODO(bhsueh) remove the output of parent_ids
         cudaD2Dcpy((int*)output_tensors->at(1).data,
@@ -483,6 +490,7 @@ void Decoding<T>::forward(std::vector<Tensor>* output_tensors,
                          parent_ids_buf_ + batch_size * beam_width_,
                          end_ids_buf_,
                          stream_);
+        nvtxRangePop();
     }
     else {
         // For sampling, only copy the results to output_tensor
