@@ -158,7 +158,7 @@ __global__ void topk_stage_1_opt3(const T* __restrict log_probs,
         if (tid < k) {
             const int index = tmp_topk_buf_index + tid;
             if (block_lane == 0 && tid == 0) {
-                const int end_id = end_ids[row_id / k];
+                const int end_id = end_ids[row_id / k]; // how is row_id / k ever not 0???
                 topk_tmp_id_buf[index] = tmp_log_buf_index + end_id;
                 topk_tmp_val_buf[index] = log_probs[tmp_log_buf_index + end_id];
             }
@@ -185,7 +185,7 @@ __global__ void topk_stage_1_opt3(const T* __restrict log_probs,
             partial.insert(tmp_log_probs[index], index);
         }
 
-        TopK_2<T> total = BlockReduce(temp_storage).Reduce(partial, reduce_topk_op_2<T>);
+        TopK_2<T> total = BlockReduce(temp_storage).Reduce(partial, reduce_topk_op_2<T>); // total is actually the argmax
 
         if (tid == 0) {
             const int index = tmp_topk_buf_index + ite;

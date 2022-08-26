@@ -331,22 +331,36 @@ class Translator(object):
         all_predictions = []
 
         start_time = time.time()
-
+        c = 0
+        warmup = 5
         for batch in data_iter:
+            if c == warmup:
+                start_time = time.time()
+            c = c + 1
+
             torch.cuda.nvtx.range_push("a batch")
             if self.model_type == 'decoding_ext' or self.model_type == 'torch_decoding' or self.model_type == 'torch_decoding_with_decoder_ext':
+                torch.cuda.nvtx.range_push("ftdecoding")
                 batch_data = self.translate_batch_ftdecoding(batch, data.src_vocabs)
+                torch.cuda.nvtx.range_pop()
             else:
                 batch_data = self.translate_batch(
                     batch, data.src_vocabs, attn_debug
                 )
+            torch.cuda.nvtx.range_push("move to cpu")
             batch_data["batch"].indices = batch_data["batch"].indices.cpu()
             batch_data["batch"].src = (batch_data["batch"].src[0].cpu(), batch_data["batch"].src[1].cpu())
             if isinstance(batch_data["predictions"], torch.Tensor):
                 batch_data["predictions"] = batch_data["predictions"].cpu()
+            torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_push("xlation_builder")
+            print(batch_data['predictions'].shape)
+            print(batch_data['predictions'])
             translations = xlation_builder.from_batch(batch_data)
-
+            torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_push("postprocessing")
             for trans in translations:
+                print(trans.pred_sents)
                 all_scores += [trans.pred_scores[:self.n_best]]
                 pred_score_total += trans.pred_scores[0]
                 pred_words_total += len(trans.pred_sents[0])
@@ -406,6 +420,7 @@ class Translator(object):
                     else:
                         os.write(1, output.encode('utf-8'))
             torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_pop()
         
         end_time = time.time()
 
@@ -422,7 +437,7 @@ class Translator(object):
             total_time = end_time - start_time
             print("Total translation time (s): %f" % total_time)
             print("Average translation time (s): %f" % (
-                total_time / len(all_predictions)))
+                total_time / (len(all_predictions) - warmup)))
             print("Tokens per second: %f" % (
                 pred_words_total / total_time))
 
