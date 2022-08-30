@@ -218,6 +218,8 @@ def main():
             batch_num = 0
             token_num = 0
             time = timeit.default_timer()
+            prev_time = time
+            times = []
             for i in range(iterations):
                 torch.cuda.nvtx.range_push("generate tokens")
                 tokens_batch = gpt(start_ids,
@@ -235,12 +237,16 @@ def main():
                                    return_cum_log_probs)
                 torch.cuda.nvtx.range_pop()
                 batch_num += 1
+                current_time = timeit.default_timer()
+                times.append(current_time - prev_time)
                 for j, tokens in enumerate(tokens_batch):
                     token_num += tokens.shape[-1] - start_lengths[j]
             time_elapsed = timeit.default_timer() - time
             throughput = token_num / time_elapsed
+            times.sort()
+            p95_latency = times[round(len(times) * 95 / 100)] if len(times) > 1 else 1
             print(f"[INFO] FT-GPT generates {batch_num} batches, taking {time_elapsed:0.3f} secs "
-                  f"to generate {token_num} tokens, {throughput:0.3f} tokens/sec.")
+                  f"to generate {token_num} tokens, {throughput:0.3f} tokens/sec. P95 latency: {p95_latency:0.3f}")
 
 
 if __name__ == '__main__':
