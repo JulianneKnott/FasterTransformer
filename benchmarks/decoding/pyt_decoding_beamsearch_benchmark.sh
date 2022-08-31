@@ -45,11 +45,11 @@ nvidia-smi > ${logdir}/gpuinfo.txt
 
 for batch_size in 1 ;
 do
-for beam_size in 4 ;
+for beam_size in 4 32 64 ;
 do
 for top_k in 1 ;
 do
-    max_seq_len=16
+    max_seq_len=512
 
     if [ -f "gemm_config.in" ] ; then
         rm gemm_config.in
@@ -81,7 +81,7 @@ do
                                                              --max_seq_len ${max_seq_len} \
                                                              --model_type decoding_ext \
                                                              --data_type ${precision} \
-                                                             --input_file ../F-inputs-100 \
+                                                             --input_file ../F-inputs-512x100 \
                                                              --sampling_topk ${top_k} \
                                                              --output_file output.txt 2>&1 | tee ${ft_decoding_log}
     sleep 60
