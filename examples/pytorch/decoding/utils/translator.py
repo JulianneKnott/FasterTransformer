@@ -356,8 +356,6 @@ class Translator(object):
                 batch_data["predictions"] = batch_data["predictions"].cpu()
             torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_push("xlation_builder")
-            print(batch_data['predictions'].shape)
-            print(batch_data['predictions'])
             translations = xlation_builder.from_batch(batch_data)
             torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_push("postprocessing")
