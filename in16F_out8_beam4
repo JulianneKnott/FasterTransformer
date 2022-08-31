@@ -1,0 +1,64 @@
+
+=============== Arguments ===============
+layer_num: 12
+output_len: 8
+head_num: 12
+size_per_head: 64
+vocab_size: 50257
+beam_width: 4
+top_k: 1
+top_p: 0.9
+temperature: 1.0
+len_penalty: 1.0
+beam_search_diversity_rate: 0.0
+tensor_para_size: 1
+pipeline_para_size: 1
+ckpt_path: /datadrive/jknott/models_gpt/hf_gpt_32_model_fp32-c/1-gpu
+lib_path: ./lib/libth_gpt.so
+vocab_file: /datadrive/jknott/models_gpt/gpt2-vocab.json
+merges_file: /datadrive/jknott/models_gpt/gpt2-merges.txt
+start_id: 50256
+end_id: 50256
+max_batch_size: 1
+repetition_penalty: 1.0
+max_seq_len: 1024
+data_type: fp16
+time: True
+sample_input_file: /datadrive/jknott/FasterTransformer/F-inputs-16
+sample_output_file: None
+is_fix_random_seed: True
+sparse: False
+return_cum_log_probs: 0
+iterations: 1000
+=========================================
+
+[INFO] batch size: 1
+[INFO] batch 0, beam 0: 
+[Context]
+Microsoft is a company that develops and licenses consumer electronics personal computers and related products. 
+
+[Output]
+ The company is also known for its
+
+[INFO] batch 0, beam 1: 
+[Context]
+Microsoft is a company that develops and licenses consumer electronics personal computers and related products. 
+
+[Output]
+ It is also a company that develops
+
+[INFO] batch 0, beam 2: 
+[Context]
+Microsoft is a company that develops and licenses consumer electronics personal computers and related products. 
+
+[Output]
+ It is also a company that manufactures
+
+[INFO] batch 0, beam 3: 
+[Context]
+Microsoft is a company that develops and licenses consumer electronics personal computers and related products. 
+
+[Output]
+ It is also a company that sells
+
+[INFO] FT-GPT generates 1000 batches, taking 10.155 secs to generate 8000 tokens, 787.796 tokens/sec. P95 latency: 9.658
