@@ -331,6 +331,8 @@ class Translator(object):
         all_predictions = []
 
         start_time = time.time()
+        prev_time = start_time
+        times=[]
         c = 0
         warmup = 5
         for batch in data_iter:
@@ -419,10 +421,15 @@ class Translator(object):
                         self.logger.info(output)
                     else:
                         os.write(1, output.encode('utf-8'))
+                current_time = time.time()
+                times.append(current_time - prev_time)
+                prev_time = current_time
             torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_pop()
         
         end_time = time.time()
+        times.sort()
+        p95_time = times[round(len(times) * 95 / 100)] if len(times) > 1 else times[1]
 
         if self.report_score:
             msg = self._report_score('PRED', pred_score_total,
@@ -438,6 +445,7 @@ class Translator(object):
             print("Total translation time (s): %f" % total_time)
             print("Average translation time (s): %f" % (
                 total_time / (len(all_predictions) - warmup)))
+            print("P95 translation time (s): %f" % p95_time)
             print("Tokens per second: %f" % (
                 pred_words_total / total_time))
 

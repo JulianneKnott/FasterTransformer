@@ -45,7 +45,7 @@ nvidia-smi > ${logdir}/gpuinfo.txt
 
 for batch_size in 1 ;
 do
-for beam_size in 1 32 64 ;
+for beam_size in 4 ;
 do
 for top_k in 1 ;
 do
@@ -81,7 +81,7 @@ do
                                                              --max_seq_len ${max_seq_len} \
                                                              --model_type decoding_ext \
                                                              --data_type ${precision} \
-                                                             --input_file ../J-inputs-16x100 \
+                                                             --input_file ../F-inputs-100 \
                                                              --sampling_topk ${top_k} \
                                                              --output_file output.txt 2>&1 | tee ${ft_decoding_log}
     sleep 60
