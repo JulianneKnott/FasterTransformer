@@ -239,14 +239,20 @@ def main():
                 batch_num += 1
                 current_time = timeit.default_timer()
                 times.append(current_time - prev_time)
+                prev_time = current_time
                 for j, tokens in enumerate(tokens_batch):
                     token_num += tokens.shape[-1] - start_lengths[j]
             time_elapsed = timeit.default_timer() - time
             throughput = token_num / time_elapsed
             times.sort()
-            p95_latency = times[round(len(times) * 95 / 100)] if len(times) > 1 else 1
+            p95_latency = times[round(len(times) * 95 / 100)] if len(times) > 1 else times[0]
+            p99_latency = times[round(len(times) * 99 / 100)] if len(times) > 1 else times[0]
+            p999_latency = times[round(len(times) * 999 / 1000)] if len(times) > 1 else times[0]
             print(f"[INFO] FT-GPT generates {batch_num} batches, taking {time_elapsed:0.3f} secs "
-                  f"to generate {token_num} tokens, {throughput:0.3f} tokens/sec. P95 latency: {p95_latency:0.3f}")
+                  f"to generate {token_num} tokens, {throughput:0.3f} tokens/sec. "
+                  f"P95 latency: {p95_latency:0.3f}. "
+                  f"P99 latency: {p99_latency:0.3f}. "
+                  f"P999 latency: {p999_latency:0.3f}. ")
 
 
 if __name__ == '__main__':
