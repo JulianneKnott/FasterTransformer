@@ -1,3 +1,4 @@
 bash rebuild.sh
-bash setup_models.sh
-bash run_all.sh
+cd build
+bash ../setup_models.sh
+bash ../run_all.sh

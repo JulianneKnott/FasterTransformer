@@ -11,8 +11,6 @@ model_dim="$1"; shift
 
 size_per_head=$((model_dim / head_num))
 
-cd /datadrive/jknott/FasterTransformer/build
-
 ./bin/gpt_gemm 1 $beam $input_len $head_num $size_per_head $((model_dim * 4)) 50257 1 1
 
 python ../examples/pytorch/gpt/gpt_example.py \

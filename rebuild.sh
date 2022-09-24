@@ -1,4 +1,3 @@
-cd /datadrive/jknott/FasterTransformer
 rm -rf build
 mkdir -p build
 cd build
